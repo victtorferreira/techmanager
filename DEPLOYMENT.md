@@ -37,8 +37,34 @@ O repositorio `victtorferreira/techmanager` contem o backend na raiz.
 
 As migrations criam as tabelas, mas nao transferem os dados locais.
 O seed atual cria uma conta com senha fixa de demonstracao; nao o execute
-no banco publico. O primeiro usuario de producao precisa ser provisionado
-com credenciais proprias antes de usar o login.
+no banco publico.
+
+## Primeiro administrador
+
+Depois de enviar o codigo atualizado ao GitHub, configure no servico da API:
+
+- `ADMIN_EMAIL`: seu e-mail de login.
+- `ADMIN_PASSWORD`: senha exclusiva com pelo menos 12 caracteres e no maximo 72 bytes.
+- `ADMIN_TENANT_NAME`: nome da assistencia (opcional).
+- `ADMIN_TENANT_SLUG`: identificador com letras minusculas, numeros e hifens
+  (opcional; padrao `techmanager`).
+
+Use temporariamente este Start Command e faca o deploy:
+
+```sh
+npm run prisma:deploy && npm run db:admin && npm run start:prod
+```
+
+O log confirmara a criacao sem exibir a senha. O comando serve apenas para
+o primeiro administrador. Se a mesma conta ja existir, ele preserva a senha.
+Depois de confirmar o login, restaure o Start Command:
+
+```sh
+npm run prisma:deploy && npm run start:prod
+```
+
+Remova `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_TENANT_NAME` e `ADMIN_TENANT_SLUG`
+das variaveis e aplique as alteracoes. A conta permanece no banco.
 
 O `.env` ja estava versionado. Remova-o do indice do Git junto de `dist`,
 preservando os arquivos locais, antes de enviar as alteracoes:
