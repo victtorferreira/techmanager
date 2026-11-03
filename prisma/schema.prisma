@@ -1,0 +1,309 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  ATTENDANT
+  TECHNICIAN
+}
+
+enum ServiceOrderStatus {
+  RECEIVED
+  DIAGNOSIS
+  WAITING_APPROVAL
+  WAITING_PART
+  IN_REPAIR
+  TESTING
+  READY
+  DELIVERED
+  CANCELED
+  NO_REPAIR
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  PIX
+  CREDIT_CARD
+  DEBIT_CARD
+  BANK_TRANSFER
+  OTHER
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}
+
+enum FinanceEntryType {
+  INCOME
+  EXPENSE
+}
+
+enum FinanceEntryStatus {
+  PENDING
+  PAID
+  CANCELED
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum CustomerClassification {
+  NORMAL
+  VIP
+  PREMIUM
+}
+
+enum CustomerPriceTable {
+  RETAIL
+  WHOLESALE
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  customers Customer[]
+  devices   Device[]
+  products  Product[]
+  orders    ServiceOrder[]
+  sales     Sale[]
+  appointments Appointment[]
+  financialEntries FinancialEntry[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String
+  name         String
+  email        String
+  passwordHash String
+  role         UserRole @default(ATTENDANT)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  sales        Sale[]        @relation("SaleSeller")
+  financialEntries FinancialEntry[] @relation("FinanceEntryCreator")
+}
+
+model Customer {
+  id                     String                 @id @default(uuid())
+  tenantId               String
+  name                   String
+  customerType           CustomerType           @default(INDIVIDUAL)
+  photoData              String?                @db.Text
+  phone                  String?
+  whatsapp               String?
+  whatsappSameAsPhone    Boolean                @default(true)
+  email                  String?
+  document               String?
+  dateOfBirth            DateTime?              @db.Date
+  zipCode                String?
+  street                 String?
+  addressNumber          String?
+  complement             String?
+  neighborhood           String?
+  city                   String?
+  state                  String?
+  addressReference       String?
+  deliveryRoute          String?
+  isTaxPayer             Boolean?
+  stateRegistration      String?
+  cityIbgeCode           String?
+  municipalRegistration String?
+  invoiceEmail           String?
+  classification         CustomerClassification @default(NORMAL)
+  active                 Boolean                @default(true)
+  creditLimit            Decimal                @default(0) @db.Decimal(12, 2)
+  priceTable             CustomerPriceTable     @default(RETAIL)
+  discountPercent        Decimal                @default(0) @db.Decimal(5, 2)
+  notes                  String?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  tenant                 Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  devices                Device[]
+  orders                 ServiceOrder[]
+  sales                  Sale[]
+  appointments           Appointment[]
+
+  @@index([tenantId, name])
+  @@index([tenantId, phone])
+}
+
+model Device {
+  id          String   @id @default(uuid())
+  tenantId    String
+  customerId  String
+  brand       String
+  model       String
+  color       String?
+  imei        String?
+  serial      String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orders      ServiceOrder[]
+
+  @@index([tenantId, customerId])
+  @@index([tenantId, imei])
+}
+
+model ServiceOrder {
+  id                String             @id @default(uuid())
+  tenantId          String
+  number            Int
+  customerId        String
+  deviceId          String
+  reportedIssue     String
+  publicRequest     Boolean            @default(false)
+  accessories       String?
+  devicePowersOn    Boolean?
+  liquidDamage      Boolean?
+  previousRepair    Boolean?
+  preferredContact  String?
+  contactTime       String?
+  privacyAcceptedAt DateTime?
+  diagnosis         String?
+  status            ServiceOrderStatus @default(RECEIVED)
+  estimatedDelivery DateTime?
+  laborAmount       Decimal            @default(0) @db.Decimal(12, 2)
+  partsAmount       Decimal            @default(0) @db.Decimal(12, 2)
+  totalAmount       Decimal            @default(0) @db.Decimal(12, 2)
+  paymentStatus     PaymentStatus      @default(PENDING)
+  internalNotes     String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer          Customer           @relation(fields: [customerId], references: [id])
+  device            Device             @relation(fields: [deviceId], references: [id])
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+}
+
+model Product {
+  id            String   @id @default(uuid())
+  tenantId      String
+  name          String
+  sku           String?
+  category      String?
+  costPrice     Decimal  @default(0) @db.Decimal(12, 2)
+  salePrice     Decimal  @default(0) @db.Decimal(12, 2)
+  stockQuantity Int      @default(0)
+  minimumStock  Int      @default(0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  saleItems     SaleItem[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, name])
+}
+
+model Sale {
+  id            String        @id @default(uuid())
+  tenantId      String
+  number        Int
+  customerId    String?
+  sellerId      String?
+  paymentMethod PaymentMethod
+  subtotal      Decimal       @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer      Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  seller        User?         @relation("SaleSeller", fields: [sellerId], references: [id], onDelete: SetNull)
+  items         SaleItem[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, customerId])
+}
+
+model SaleItem {
+  id        String   @id @default(uuid())
+  saleId    String
+  productId String
+  productName String
+  sku       String?
+  unitPrice Decimal  @db.Decimal(12, 2)
+  unitCost  Decimal  @db.Decimal(12, 2)
+  quantity  Int
+  total     Decimal  @db.Decimal(12, 2)
+  sale      Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model Appointment {
+  id                String            @id @default(uuid())
+  tenantId          String
+  customerId        String
+  title             String
+  deviceDescription String?
+  details           String?
+  startsAt          DateTime
+  endsAt            DateTime
+  status            AppointmentStatus @default(SCHEDULED)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer          Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, startsAt])
+  @@index([tenantId, status, startsAt])
+  @@index([customerId, startsAt])
+}
+
+model FinancialEntry {
+  id            String            @id @default(uuid())
+  tenantId      String
+  createdById   String?
+  type          FinanceEntryType
+  status        FinanceEntryStatus @default(PAID)
+  category      String
+  description   String
+  amount        Decimal           @db.Decimal(12, 2)
+  paymentMethod PaymentMethod?
+  occurredAt    DateTime
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy     User?             @relation("FinanceEntryCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, type, status])
+}
