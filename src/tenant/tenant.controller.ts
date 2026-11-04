@@ -1,7 +1,7 @@
 import { Body, Controller, ForbiddenException, Get, Patch, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsString, Length } from 'class-validator';
+import { IsOptional, IsString, Length, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TenantService } from './tenant.service';
 
@@ -9,6 +9,9 @@ class UpdateTenantProfileDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString() @Length(2, 80)
   name!: string;
+
+  @IsOptional() @IsString() @MaxLength(349550)
+  logo?: string | null;
 }
 
 @ApiTags('Assistência')
@@ -28,6 +31,6 @@ export class TenantController {
     if (!['OWNER', 'ADMIN'].includes(req.user.role)) {
       throw new ForbiddenException('Somente proprietários e administradores podem alterar os dados da assistência.');
     }
-    return this.tenant.updateName(req.user.tenantId, dto.name);
+    return this.tenant.updateProfile(req.user.tenantId, dto.name, dto.logo);
   }
 }

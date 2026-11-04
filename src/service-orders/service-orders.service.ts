@@ -32,7 +32,7 @@ export class ServiceOrdersService {
 
   async publicTenant(slug: string) {
     const tenant = await this.prisma.tenant.findUnique({
-      where: { slug }, select: { name: true, phone: true, slug: true },
+      where: { slug }, select: { name: true, phone: true, slug: true, logo: true },
     });
     if (!tenant) throw new NotFoundException('Assistência não encontrada.');
     return tenant;

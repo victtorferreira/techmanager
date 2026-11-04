@@ -81,6 +81,7 @@ enum CustomerPriceTable {
 model Tenant {
   id        String   @id @default(uuid())
   name      String
+  logo      String?  @db.Text
   slug      String   @unique
   email     String?
   phone     String?
