@@ -7,7 +7,7 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.useBodyParser('json', { limit: '1mb' });
+  app.useBodyParser('json', { limit: '3mb' });
   app.setGlobalPrefix('api');
   app.use(helmet());
   app.enableCors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:5173', credentials: true });

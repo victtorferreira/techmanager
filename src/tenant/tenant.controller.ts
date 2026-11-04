@@ -10,7 +10,7 @@ class UpdateTenantProfileDto {
   @IsString() @Length(2, 80)
   name!: string;
 
-  @IsOptional() @IsString() @MaxLength(349550)
+  @IsOptional() @IsString() @MaxLength(Math.ceil(2 * 1024 * 1024 / 3) * 4 + 23)
   logo?: string | null;
 }
 

@@ -30,10 +30,18 @@ test('logo persists for the authenticated tenant, survives name changes and can 
 
 test('invalid formats, mismatched signatures and oversized images cannot be saved', async () => {
   const { service, rows } = fixture();
-  for (const value of ['https://example.com/logo.png', 'data:image/svg+xml;base64,PHN2Zz4=', logo.replace('image/png', 'image/jpeg'), `data:image/png;base64,${Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(256 * 1024)]).toString('base64')}`]) {
+  for (const value of ['https://example.com/logo.png', 'data:image/svg+xml;base64,PHN2Zz4=', logo.replace('image/png', 'image/jpeg'), `data:image/png;base64,${Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(2 * 1024 * 1024)]).toString('base64')}`]) {
     await assert.rejects(service.updateProfile('one', 'Oficina', value), { status: 400 });
   }
   assert.equal(rows[0].logo, null);
+});
+
+test('logos at the 2 MB limit are accepted', async () => {
+  const { service } = fixture();
+  const bytes = Buffer.alloc(2 * 1024 * 1024);
+  Buffer.from('89504e470d0a1a0a', 'hex').copy(bytes);
+  const largeLogo = `data:image/png;base64,${bytes.toString('base64')}`;
+  assert.equal((await service.updateProfile('one', 'Oficina', largeLogo)).logo, largeLogo);
 });
 
 test('only owners and administrators may change the identity', async () => {

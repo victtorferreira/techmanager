@@ -22,8 +22,8 @@ export class TenantService {
       const valid = match[1] === 'png' ? bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
         : match[1] === 'jpeg' ? bytes.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex'))
         : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
-      if (!valid || bytes.length > 256 * 1024 || bytes.toString('base64') !== match[2]) {
-        throw new BadRequestException('A logo deve ser uma imagem PNG, JPG ou WebP de até 256 KB.');
+      if (!valid || bytes.length > 2 * 1024 * 1024 || bytes.toString('base64') !== match[2]) {
+        throw new BadRequestException('A logo deve ser uma imagem PNG, JPG ou WebP de até 2 MB.');
       }
     }
     const tenant = await this.prisma.tenant.updateMany({ where: { id: tenantId }, data: { name, ...(logo !== undefined ? { logo } : {}) } });
