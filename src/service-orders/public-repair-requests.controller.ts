@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { Equals, IsBoolean, IsEmail, IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { ArrayMaxSize, Equals, IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, Length, Matches, MaxLength } from 'class-validator';
 import { PublicRepairRequest, ServiceOrdersService } from './service-orders.service';
 
 class CreatePublicRepairRequestDto implements PublicRepairRequest {
@@ -52,6 +52,17 @@ class CreatePublicRepairRequestDto implements PublicRepairRequest {
   @Transform(({ value }) => typeof value === 'string' ? (value.trim() || undefined) : value)
   @IsOptional() @IsString() @Length(1, 100)
   contactTime?: string;
+
+  @IsOptional() @IsIn(['DROP_OFF', 'PICKUP'])
+  deliveryMethod?: 'DROP_OFF' | 'PICKUP';
+
+  @Transform(({ value }) => typeof value === 'string' ? (value.trim() || undefined) : value)
+  @IsOptional() @IsString() @Length(10, 500)
+  pickupAddress?: string;
+
+  @IsOptional() @IsArray() @ArrayMaxSize(3)
+  @IsString({ each: true }) @MaxLength(819250, { each: true })
+  devicePhotos?: string[];
 
   @Equals(true)
   privacyAccepted!: boolean;

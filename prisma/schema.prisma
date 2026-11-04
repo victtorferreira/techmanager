@@ -191,6 +191,9 @@ model ServiceOrder {
   previousRepair    Boolean?
   preferredContact  String?
   contactTime       String?
+  deliveryMethod    String?
+  pickupAddress     String?
+  devicePhotos      String[]           @default([])
   privacyAcceptedAt DateTime?
   diagnosis         String?
   status            ServiceOrderStatus @default(RECEIVED)

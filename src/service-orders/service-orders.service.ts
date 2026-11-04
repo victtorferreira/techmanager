@@ -16,6 +16,9 @@ export type PublicRepairRequest = {
   previousRepair: boolean;
   preferredContact: 'WHATSAPP' | 'PHONE' | 'EMAIL';
   contactTime?: string;
+  deliveryMethod?: 'DROP_OFF' | 'PICKUP';
+  pickupAddress?: string;
+  devicePhotos?: string[];
 };
 
 @Injectable()
@@ -43,6 +46,30 @@ export class ServiceOrdersService {
     if (!tenant) throw new NotFoundException('Assistência não encontrada.');
     if (input.preferredContact === 'EMAIL' && !input.email) {
       throw new BadRequestException('Informe um e-mail para receber contato por e-mail.');
+    }
+
+    if (input.deliveryMethod && !['DROP_OFF', 'PICKUP'].includes(input.deliveryMethod)) {
+      throw new BadRequestException('Escolha coleta ou entrega na assistência.');
+    }
+    const pickupAddress = input.deliveryMethod === 'PICKUP' ? input.pickupAddress?.trim() : null;
+    if (input.deliveryMethod === 'PICKUP' && (!pickupAddress || pickupAddress.length < 10 || pickupAddress.length > 500)) {
+      throw new BadRequestException('Informe o endereço completo para a coleta (10 a 500 caracteres).');
+    }
+    const devicePhotos = input.devicePhotos ?? [];
+    if (!Array.isArray(devicePhotos) || devicePhotos.length > 3) {
+      throw new BadRequestException('Anexe no máximo 3 fotos do aparelho.');
+    }
+    for (const photo of devicePhotos) {
+      const match = typeof photo === 'string' && photo.length <= 819250
+        ? /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(photo) : null;
+      if (!match) throw new BadRequestException('Envie fotos em JPG, PNG ou WebP.');
+      const bytes = Buffer.from(match[2], 'base64');
+      const valid = match[1] === 'png' ? bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+        : match[1] === 'jpeg' ? bytes.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex'))
+        : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
+      if (!valid || bytes.length > 600 * 1024 || bytes.toString('base64') !== match[2]) {
+        throw new BadRequestException('Cada foto deve ser uma imagem válida de até 600 KB após a otimização.');
+      }
     }
 
     const phone = input.phone.replace(/[^\d+]/g, '');
@@ -74,6 +101,9 @@ export class ServiceOrdersService {
           previousRepair: input.previousRepair,
           preferredContact: input.preferredContact,
           contactTime: input.contactTime || null,
+          deliveryMethod: input.deliveryMethod || null,
+          pickupAddress,
+          devicePhotos,
           privacyAcceptedAt: new Date(),
         },
         select: { number: true },
