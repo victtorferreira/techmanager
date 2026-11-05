@@ -62,8 +62,15 @@ export class SuppliersService {
   }
 
   async remove(tenantId: string, id: string) {
-    const result = await this.prisma.supplier.deleteMany({ where: { tenantId, id } });
-    if (!result.count) throw new NotFoundException('Fornecedor não encontrado.');
-    return { deleted: true };
+    try {
+      const result = await this.prisma.supplier.deleteMany({ where: { tenantId, id } });
+      if (!result.count) throw new NotFoundException('Fornecedor não encontrado.');
+      return { deleted: true };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new ConflictException('Este fornecedor possui produtos ou compras vinculadas. Marque-o como inativo para preservar o histórico.');
+      }
+      throw error;
+    }
   }
 }

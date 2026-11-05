@@ -91,6 +91,12 @@ test('duplicate documents return a readable conflict on create and update', asyn
   await assert.rejects(f.service.update('tenant-one', 'one', { name: 'Peças', active: true }), { status: 409 });
 });
 
+test('supplier linked to purchases cannot be deleted and gets an inactivation instruction', async () => {
+  const f = fixture();
+  f.prisma.supplier.deleteMany = async () => { throw new Prisma.PrismaClientKnownRequestError('Foreign key', { code: 'P2003', clientVersion: '6' }); };
+  await assert.rejects(f.service.remove('tenant-one', 'one'), error => error.status === 409 && error.message.includes('inativo'));
+});
+
 test('DTO accepts optional empty fields and validates identifiers, contact details and pagination', async () => {
   const valid = plainToInstance(SupplierDto, { name: ' Peças ', active: true, document: '', email: '', state: '', phone: '' });
   assert.equal((await validate(valid)).length, 0);

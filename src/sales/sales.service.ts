@@ -63,15 +63,18 @@ export class SalesService {
       const last = await tx.sale.findFirst({ where: { tenantId }, orderBy: { number: 'desc' }, select: { number: true } });
       const number = (last?.number ?? 0) + 1;
 
-      for (const item of input.items) {
+      const balances = new Map<string, number>();
+      for (const item of [...input.items].sort((a, b) => a.productId.localeCompare(b.productId))) {
         const update = await tx.product.updateMany({
           where: { id: item.productId, tenantId, active: true, stockQuantity: { gte: item.quantity } },
           data: { stockQuantity: { decrement: item.quantity } },
         });
         if (update.count !== 1) throw new BadRequestException('O estoque mudou durante a venda. Atualize e tente novamente.');
+        const product = await tx.product.findUniqueOrThrow({ where: { id: item.productId } });
+        balances.set(item.productId, product.stockQuantity);
       }
 
-      return tx.sale.create({
+      const sale = await tx.sale.create({
         data: {
           tenantId,
           number,
@@ -85,6 +88,12 @@ export class SalesService {
         },
         include: { customer: true, seller: { select: { name: true } }, items: true },
       });
+      await tx.stockMovement.createMany({ data: lines.map(line => ({
+        tenantId, productId: line.productId, productName: line.productName, type: 'SALE' as const,
+        quantity: -line.quantity, balanceAfter: balances.get(line.productId)!, unitCost: line.unitCost,
+        saleId: sale.id, createdById: sellerId,
+      })) });
+      return sale;
     });
   }
 }
