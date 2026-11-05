@@ -91,6 +91,7 @@ model Tenant {
   customers Customer[]
   devices   Device[]
   products  Product[]
+  suppliers Supplier[]
   orders    ServiceOrder[]
   sales     Sale[]
   appointments Appointment[]
@@ -212,6 +213,30 @@ model ServiceOrder {
   @@unique([tenantId, number])
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
+}
+
+model Supplier {
+  id           String   @id @default(uuid())
+  tenantId     String
+  name         String
+  tradeName    String?
+  document     String?
+  contactName  String?
+  phone        String?
+  whatsapp     String?
+  email        String?
+  address      String?
+  city         String?
+  state        String?
+  paymentTerms String?
+  notes        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, document])
+  @@index([tenantId, name])
 }
 
 model Product {
