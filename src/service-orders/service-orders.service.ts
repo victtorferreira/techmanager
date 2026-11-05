@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateOrderDto } from './service-orders.dto';
 
 export type PublicRepairRequest = {
   name: string;
@@ -114,29 +115,38 @@ export class ServiceOrdersService {
     return { number: created.number, tenantName: tenant.name };
   }
 
-  list(tenantId: string) {
+  list(tenantId: string, orderId?: string) {
     return this.prisma.serviceOrder.findMany({
-      where: { tenantId },
+      where: { tenantId, ...(orderId ? { id: orderId } : {}) },
       include: { customer: true, device: true },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
   }
 
-  async create(tenantId: string, data: { customerId: string; deviceId: string; reportedIssue: string; estimatedDelivery?: string }) {
+  devices(tenantId: string, customerId: string) {
+    return this.prisma.device.findMany({ where: { tenantId, customerId }, select: { id: true, brand: true, model: true, color: true, imei: true, serial: true }, orderBy: { createdAt: 'desc' } });
+  }
+
+  async create(tenantId: string, data: CreateOrderDto) {
+    if (Boolean(data.deviceId) === Boolean(data.device)) throw new BadRequestException('Selecione um aparelho existente ou informe os dados de um novo aparelho.');
     return this.prisma.$transaction(async tx => {
-      const [customer, device] = await Promise.all([
-        tx.customer.findFirst({ where: { id: data.customerId, tenantId } }),
-        tx.device.findFirst({ where: { id: data.deviceId, tenantId, customerId: data.customerId } }),
-      ]);
-      if (!customer || !device) throw new BadRequestException('Cliente ou aparelho não pertence a esta assistência.');
+      const customer = await tx.customer.findFirst({ where: { id: data.customerId, tenantId } });
+      if (!customer) throw new BadRequestException('Cliente não pertence a esta assistência.');
+      const device = data.deviceId
+        ? await tx.device.findFirst({ where: { id: data.deviceId, tenantId, customerId: data.customerId } })
+        : await tx.device.create({ data: { tenantId, customerId: data.customerId,
+          brand: data.device!.brand, model: data.device!.model, color: data.device!.color || null,
+          imei: data.device!.imei || null, serial: data.device!.serial || null,
+        } });
+      if (!device) throw new BadRequestException('Aparelho não pertence a este cliente nesta assistência.');
       const number = await this.nextNumber(tx, tenantId);
       return tx.serviceOrder.create({
         data: {
           tenantId,
           number,
           customerId: data.customerId,
-          deviceId: data.deviceId,
+          deviceId: device.id,
           reportedIssue: data.reportedIssue,
           estimatedDelivery: data.estimatedDelivery ? new Date(data.estimatedDelivery) : undefined,
         },

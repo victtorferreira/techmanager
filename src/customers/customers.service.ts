@@ -53,6 +53,11 @@ export class CustomersService {
   create(tenantId: string, data: CustomerData & { name: string }) {
     return this.prisma.customer.create({ data: { ...customerWriteData<Prisma.CustomerUncheckedCreateInput>(data), tenantId } });
   }
+  async find(tenantId: string, id: string) {
+    const customer = await this.prisma.customer.findFirst({ where: { tenantId, id } });
+    if (!customer) throw new NotFoundException('Cliente não encontrado.');
+    return customer;
+  }
 
   async update(tenantId: string, id: string, data: CustomerData) {
     const customer = await this.prisma.customer.findFirst({ where: { id, tenantId }, select: { id: true } });

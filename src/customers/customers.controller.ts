@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CustomerClassification, CustomerPriceTable, CustomerType } from '@prisma/client';
 import { IsBoolean, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
@@ -48,6 +48,7 @@ class UpdateCustomerDto extends CustomerFieldsDto {
 export class CustomersController {
   constructor(private service: CustomersService) {}
   @Get() list(@Req() req: any) { return this.service.list(req.user.tenantId); }
+  @Get(':id') find(@Req() req: any, @Param('id', ParseUUIDPipe) id: string) { return this.service.find(req.user.tenantId, id); }
   @Post() create(@Req() req: any, @Body() dto: CreateCustomerDto) { return this.service.create(req.user.tenantId, dto); }
   @Patch(':id') update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateCustomerDto) { return this.service.update(req.user.tenantId, id, dto); }
 }

@@ -1,21 +1,16 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { IsDateString, IsOptional, IsString, MinLength } from 'class-validator';
+import { CreateOrderDto, DeviceQueryDto, OrderQueryDto } from './service-orders.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ServiceOrdersService } from './service-orders.service';
 
-class CreateOrderDto {
-  @IsString() customerId!: string;
-  @IsString() deviceId!: string;
-  @IsString() @MinLength(3) reportedIssue!: string;
-  @IsOptional() @IsDateString() estimatedDelivery?: string;
-}
 @ApiTags('Ordens de serviço')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('service-orders')
 export class ServiceOrdersController {
   constructor(private service: ServiceOrdersService) {}
-  @Get() list(@Req() req: any) { return this.service.list(req.user.tenantId); }
+  @Get() list(@Req() req: any, @Query() query: OrderQueryDto) { return this.service.list(req.user.tenantId, query.orderId); }
+  @Get('devices') devices(@Req() req: any, @Query() query: DeviceQueryDto) { return this.service.devices(req.user.tenantId, query.customerId); }
   @Post() create(@Req() req: any, @Body() dto: CreateOrderDto) { return this.service.create(req.user.tenantId, dto); }
 }
