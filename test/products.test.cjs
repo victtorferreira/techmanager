@@ -10,6 +10,7 @@ const { CreateProductDto, ProductDto, MovementDto, PurchaseQueryDto } = require(
 function fixture() {
   let products = [{ id: 'p1', tenantId: 't1', name: 'Tela', active: true, stockQuantity: 3, costPrice: new Prisma.Decimal(250), salePrice: new Prisma.Decimal(400) }, { id: 'p2', tenantId: 't2', name: 'Bateria', active: true, stockQuantity: 8 }];
   let movements = [];
+  let entries = [];
   const matches = (row, where) => Object.entries(where).every(([k, v]) => {
     if (v && typeof v === 'object') return (v.gte === undefined || row[k] >= v.gte) && (v.lte === undefined || row[k] <= v.lte) && (v.lt === undefined || row[k] < v.lt) && (!v.in || v.in.includes(row[k]));
     return row[k] === v;
@@ -32,27 +33,31 @@ function fixture() {
     supplier: { findFirst: async ({ where }) => where.tenantId === 't1' && where.id === 's1' ? { id: 's1', name: 'Fornecedor A' } : null },
     serviceOrder: { findFirst: async ({ where }) => where.tenantId === 't1' && where.id === 'o1' ? { id: 'o1', number: 10 } : null },
     stockMovement: {
-      create: async ({ data }) => { const row = { id: String(movements.length + 1), ...data, unitCost: new Prisma.Decimal(data.unitCost) }; movements.push(row); return row; },
+      create: async ({ data }) => { const row = { id: String(movements.length + 1), canceledAt: null, ...data, unitCost: new Prisma.Decimal(data.unitCost) }; movements.push(row); return row; },
       createMany: async ({ data }) => { for (const row of data) await tx.stockMovement.create({ data: row }); },
       findMany: async ({ where, skip = 0, take }) => movements.filter(m => matches(m, where)).slice(skip, take ? skip + take : undefined),
       count: async ({ where }) => movements.filter(m => matches(m, where)).length,
     },
+    financialEntry: { create: async ({ data }) => { const row = { id: `entry${entries.length + 1}`, ...data }; entries.push(row); return row; } },
     sale: { findFirst: async () => null, create: async ({ data }) => ({ id: 'sale1', ...data }) },
     $queryRaw: async () => [],
   };
   const prisma = { ...tx, $transaction: async work => {
     if (typeof work !== 'function') return Promise.all(work);
-    const previousProducts = products.map(p => ({ ...p })); const previousMovements = [...movements];
-    try { return await work(tx); } catch (e) { products = previousProducts; movements = previousMovements; throw e; }
+    const previousProducts = products.map(p => ({ ...p })); const previousMovements = [...movements]; const previousEntries = [...entries];
+    try { return await work(tx); } catch (e) { products = previousProducts; movements = previousMovements; entries = previousEntries; throw e; }
   } };
-  return { service: new ProductsService(prisma), sales: new SalesService(prisma), tx, products: () => products, movements: () => movements };
+  return { service: new ProductsService(prisma), sales: new SalesService(prisma), tx, products: () => products, movements: () => movements, entries: () => entries };
 }
 test('purchase records original supplier, exact cost, date, actor and resulting balance', async () => {
   const f = fixture();
   const result = await f.service.move('t1', 'p1', { type: 'PURCHASE', quantity: 2, unitCost: 251.25, occurredAt: '2026-11-01', supplierId: 's1' }, 'user1');
   assert.equal(result.quantity, 2); assert.equal(result.balanceAfter, 5); assert.equal(result.unitCost.toString(), '251.25');
   assert.equal(result.supplierName, 'Fornecedor A'); assert.equal(result.createdById, 'user1');
-  assert.equal(result.occurredAt.toISOString(), '2026-11-01T00:00:00.000Z');
+  assert.equal(result.occurredAt.toISOString(), '2026-11-01T15:00:00.000Z');
+  assert.equal(f.entries()[0].stockMovementId, result.id);
+  assert.equal(f.entries()[0].amount.toString(), '502.5');
+  assert.equal(f.entries()[0].status, 'PENDING');
   assert.equal(f.products()[0].supplierId, 's1');
 });
 test('OS consumption, returns, defects, inventory adjustments and warranty preserve signed ledger', async () => {

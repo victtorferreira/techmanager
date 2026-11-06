@@ -1,5 +1,18 @@
 import { Transform, Type } from 'class-transformer';
-import { IsDateString, IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { PaymentMethod, ServiceOrderStatus } from '@prisma/client';
+export class UpdateOrderDto {
+  @IsEnum(ServiceOrderStatus) status!: ServiceOrderStatus;
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(999999999) laborAmount!: number;
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(999999999) partsAmount!: number;
+  @IsOptional() @IsString() @MaxLength(2000) diagnosis?: string;
+}
+export class OrderPaymentDto {
+  @IsUUID() requestId!: string;
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) @Max(999999999) amount!: number;
+  @IsEnum(PaymentMethod) paymentMethod!: PaymentMethod;
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) paidAt!: string;
+}
 const trim = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value;
 
 export class OrderDeviceDto {

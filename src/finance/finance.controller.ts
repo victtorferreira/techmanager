@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { FinanceEntryStatus, FinanceEntryType, PaymentMethod } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsDateString, IsEnum, IsIn, IsNumber, IsOptional, IsString, Length, Max, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsNumber, IsOptional, IsString, Length, Matches, Max, MaxLength, Min } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { FinanceService } from './finance.service';
 
@@ -32,6 +32,7 @@ class CreateFinanceEntryDto {
 }
 
 class UpdateFinanceEntryStatusDto {
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) paidAt?: string;
   @IsIn([FinanceEntryStatus.PAID, FinanceEntryStatus.CANCELED])
   status!: FinanceEntryStatus;
 
@@ -58,6 +59,6 @@ export class FinanceController {
 
   @Patch('entries/:id/status')
   updateStatus(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateFinanceEntryStatusDto) {
-    return this.finance.updateStatus(req.user.tenantId, id, dto.status, dto.paymentMethod);
+    return this.finance.updateStatus(req.user.tenantId, id, dto.status, dto.paymentMethod, dto.paidAt);
   }
 }

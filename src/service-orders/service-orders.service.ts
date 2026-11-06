@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateOrderDto } from './service-orders.dto';
+import { CreateOrderDto, OrderPaymentDto, UpdateOrderDto } from './service-orders.dto';
+import { lockFinance, shopDate, syncOrderBalance } from '../finance/integration';
 
 export type PublicRepairRequest = {
   name: string;
@@ -118,7 +119,10 @@ export class ServiceOrdersService {
   list(tenantId: string, orderId?: string) {
     return this.prisma.serviceOrder.findMany({
       where: { tenantId, ...(orderId ? { id: orderId } : {}) },
-      include: { customer: true, device: true },
+      include: { customer: true, device: true,
+        financialEntries: { include: { reversal: { select: { id: true } } }, orderBy: { occurredAt: 'desc' } },
+        stockMovements: { where: { type: { in: ['SERVICE_ORDER', 'RETURN'] } }, orderBy: { sequence: 'desc' } },
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
@@ -126,6 +130,48 @@ export class ServiceOrdersService {
 
   devices(tenantId: string, customerId: string) {
     return this.prisma.device.findMany({ where: { tenantId, customerId }, select: { id: true, brand: true, model: true, color: true, imei: true, serial: true }, orderBy: { createdAt: 'desc' } });
+  }
+
+  async update(tenantId: string, id: string, data: UpdateOrderDto) {
+    return this.prisma.$transaction(async tx => {
+      await lockFinance(tx, tenantId);
+      const order = await tx.serviceOrder.findFirst({ where: { tenantId, id } });
+      if (!order) throw new NotFoundException('Ordem de serviço não encontrada.');
+      const totalAmount = new Prisma.Decimal(data.laborAmount).plus(data.partsAmount);
+      if (['CANCELED', 'NO_REPAIR'].includes(data.status)) {
+        const { received } = await syncOrderBalance(tx, tenantId, id);
+        if (received.gt(0)) throw new BadRequestException('Estorne os recebimentos antes de cancelar ou marcar sem conserto.');
+        const parts = await tx.stockMovement.findMany({ where: { tenantId, serviceOrderId: id, type: { in: ['SERVICE_ORDER', 'RETURN'] } } });
+        if (parts.reduce((sum, row) => sum + row.quantity, 0) !== 0) throw new BadRequestException('Devolva as peças da OS ao estoque antes de cancelar ou marcar sem conserto.');
+      }
+      await tx.serviceOrder.update({ where: { id }, data: { status: data.status, laborAmount: data.laborAmount, partsAmount: data.partsAmount, totalAmount, diagnosis: data.diagnosis } });
+      await syncOrderBalance(tx, tenantId, id);
+      return tx.serviceOrder.findFirst({ where: { tenantId, id } });
+    });
+  }
+
+  async pay(tenantId: string, id: string, createdById: string, input: OrderPaymentDto) {
+    return this.prisma.$transaction(async tx => {
+      await lockFinance(tx, tenantId);
+      const sourceKey = `payment:${tenantId}:${input.requestId}`;
+      const existing = await tx.financialEntry.findUnique({ where: { sourceKey } });
+      if (existing) {
+        if (existing.serviceOrderId !== id || !existing.amount.equals(input.amount) || existing.paymentMethod !== input.paymentMethod || existing.occurredAt.getTime() !== shopDate(input.paidAt).getTime()) throw new BadRequestException('Identificador de recebimento já utilizado com outros dados.');
+        return existing;
+      }
+      const order = await tx.serviceOrder.findFirst({ where: { tenantId, id } });
+      if (!order) throw new NotFoundException('Ordem de serviço não encontrada.');
+      if (['CANCELED', 'NO_REPAIR'].includes(order.status)) throw new BadRequestException('Esta OS não aceita recebimentos.');
+      const { remaining } = await syncOrderBalance(tx, tenantId, id);
+      if (new Prisma.Decimal(input.amount).gt(remaining)) throw new BadRequestException('O recebimento excede o saldo da OS.');
+      const entry = await tx.financialEntry.create({ data: {
+        tenantId, serviceOrderId: id, createdById, sourceKey, type: 'INCOME', status: 'PAID',
+        category: 'Ordem de serviço', description: `Recebimento OS #${String(order.number).padStart(5, '0')}`,
+        amount: input.amount, paymentMethod: input.paymentMethod, occurredAt: shopDate(input.paidAt),
+      } });
+      await syncOrderBalance(tx, tenantId, id);
+      return entry;
+    });
   }
 
   async create(tenantId: string, data: CreateOrderDto) {

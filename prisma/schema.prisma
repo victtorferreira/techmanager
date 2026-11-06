@@ -212,6 +212,7 @@ model ServiceOrder {
   customer          Customer           @relation(fields: [customerId], references: [id])
   device            Device             @relation(fields: [deviceId], references: [id])
   stockMovements    StockMovement[]
+  financialEntries  FinancialEntry[]
 
   @@unique([tenantId, number])
   @@index([tenantId, status])
@@ -306,6 +307,8 @@ enum StockMovementType {
 
 model StockMovement {
   id String @id @default(uuid())
+  requestKey String? @unique
+  requestHash String?
   sequence Int @unique @default(autoincrement())
   tenantId String
   productId String
@@ -322,6 +325,8 @@ model StockMovement {
   notes String?
   occurredAt DateTime @default(now())
   createdAt DateTime @default(now())
+  canceledAt DateTime?
+  financialEntry FinancialEntry?
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
   supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: Restrict)
@@ -381,6 +386,15 @@ model FinancialEntry {
   amount        Decimal           @db.Decimal(12, 2)
   paymentMethod PaymentMethod?
   occurredAt    DateTime
+  dueAt         DateTime?
+  sourceKey     String? @unique
+  stockMovementId String? @unique
+  serviceOrderId String?
+  reversalOfId  String? @unique
+  stockMovement StockMovement? @relation(fields: [stockMovementId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder? @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  reversalOf FinancialEntry? @relation("EntryReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversal FinancialEntry? @relation("EntryReversal")
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -388,4 +402,5 @@ model FinancialEntry {
 
   @@index([tenantId, occurredAt])
   @@index([tenantId, type, status])
+  @@index([tenantId, serviceOrderId])
 }

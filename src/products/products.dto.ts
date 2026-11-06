@@ -1,5 +1,12 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { PaymentMethod } from '@prisma/client';
+export class PurchasePaymentDto {
+  @IsIn(['PENDING', 'PAID']) status!: 'PENDING' | 'PAID';
+  @IsOptional() @IsEnum(PaymentMethod) paymentMethod?: PaymentMethod;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) dueAt?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) paidAt?: string;
+}
 const trim = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value;
 export class ProductDto {
   @Transform(trim) @IsString() @MinLength(2) @MaxLength(120) name!: string;
@@ -15,10 +22,14 @@ export class ProductDto {
   @IsOptional() @IsBoolean() active?: boolean;
 }
 export class CreateProductDto extends ProductDto {
+  @IsOptional() @IsUUID() requestId?: string;
+  @IsOptional() @ValidateNested() @Type(() => PurchasePaymentDto) payment?: PurchasePaymentDto;
   @IsOptional() @IsInt() @Min(0) @Max(2147483647) stockQuantity?: number;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true }) purchaseDate?: string;
 }
 export class MovementDto {
+  @IsOptional() @IsUUID() requestId?: string;
+  @IsOptional() @ValidateNested() @Type(() => PurchasePaymentDto) payment?: PurchasePaymentDto;
   @IsIn(['PURCHASE', 'SERVICE_ORDER', 'RETURN', 'LOSS', 'ADJUSTMENT', 'WARRANTY']) type!: 'PURCHASE' | 'SERVICE_ORDER' | 'RETURN' | 'LOSS' | 'ADJUSTMENT' | 'WARRANTY';
   @IsInt() @Min(-2147483647) @Max(2147483647) quantity!: number;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(9999999999.99) unitCost?: number;

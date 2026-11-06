@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { FinanceEntryStatus, FinanceEntryType, PaymentMethod, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { lockFinance, shopDate, syncOrderBalance } from './integration';
 
 type CreateEntryInput = {
   type: FinanceEntryType;
@@ -26,7 +27,7 @@ export class FinanceService {
       }),
       this.prisma.financialEntry.findMany({
         where: { tenantId, occurredAt: range },
-        include: { createdBy: { select: { name: true } } },
+        include: { createdBy: { select: { name: true } }, reversal: { select: { id: true } }, stockMovement: { select: { supplierId: true } }, reversalOf: { select: { stockMovement: { select: { supplierId: true } } } } },
         orderBy: { occurredAt: 'desc' },
       }),
     ]);
@@ -69,7 +70,12 @@ export class FinanceService {
           amount: entry.amount,
           paymentMethod: entry.paymentMethod,
           occurredAt: entry.occurredAt,
-          source: 'MANUAL' as const,
+          source: entry.stockMovementId ? 'PURCHASE' as const : entry.serviceOrderId ? 'SERVICE_ORDER' as const : entry.reversalOfId ? 'REVERSAL' as const : 'MANUAL' as const,
+          serviceOrderId: entry.serviceOrderId,
+          supplierId: entry.stockMovement?.supplierId ?? entry.reversalOf?.stockMovement?.supplierId,
+          dueAt: entry.dueAt,
+          reversed: Boolean(entry.reversal),
+          reversalOfId: entry.reversalOfId,
           createdBy: entry.createdBy?.name ?? null,
         };
       }),
@@ -108,16 +114,58 @@ export class FinanceService {
     });
   }
 
-  async updateStatus(tenantId: string, id: string, status: FinanceEntryStatus, paymentMethod?: PaymentMethod) {
-    const entry = await this.prisma.financialEntry.findFirst({ where: { id, tenantId } });
-    if (!entry) throw new NotFoundException('Lançamento financeiro não encontrado.');
-    const method = paymentMethod ?? entry.paymentMethod;
-    if (status === FinanceEntryStatus.PAID && !method) {
-      throw new BadRequestException('Informe a forma de pagamento para quitar este lançamento.');
-    }
-    return this.prisma.financialEntry.update({
-      where: { id },
-      data: { status, ...(paymentMethod ? { paymentMethod } : {}) },
+  async updateStatus(tenantId: string, id: string, status: FinanceEntryStatus, paymentMethod?: PaymentMethod, paidAt?: string) {
+    return this.prisma.$transaction(async tx => {
+      await lockFinance(tx, tenantId);
+      const entry = await tx.financialEntry.findFirst({ where: { id, tenantId }, include: { reversal: true } });
+      if (!entry) throw new NotFoundException('Lançamento financeiro não encontrado.');
+      if (entry.status === 'CANCELED') {
+        if (status === 'CANCELED') return entry;
+        throw new BadRequestException('Um lançamento cancelado não pode ser quitado.');
+      }
+      if (entry.reversalOfId) throw new BadRequestException('Estornos não podem ser alterados.');
+      if (status === 'PAID') {
+        if (entry.status === 'PAID') return entry;
+        const method = paymentMethod ?? entry.paymentMethod;
+        if (!method) throw new BadRequestException('Informe a forma de pagamento.');
+        const updated = await tx.financialEntry.update({ where: { id }, data: {
+          status: 'PAID', paymentMethod: method, occurredAt: paidAt ? shopDate(paidAt) : new Date(),
+          // Release the unique balance key: this entry is now an actual receipt.
+          ...(entry.serviceOrderId ? { sourceKey: null } : {}),
+        } });
+        if (entry.serviceOrderId) await syncOrderBalance(tx, tenantId, entry.serviceOrderId);
+        return updated;
+      }
+      if (entry.reversal) return entry.reversal;
+      if (entry.serviceOrderId && entry.status === 'PENDING') throw new BadRequestException('Cancele a cobrança pela ordem de serviço.');
+      if (entry.stockMovementId) {
+        const purchase = await tx.stockMovement.findFirst({ where: { id: entry.stockMovementId, tenantId } });
+        if (!purchase) throw new NotFoundException('Compra não encontrada.');
+        if (!purchase.canceledAt) {
+          const result = await tx.product.updateMany({ where: { tenantId, id: purchase.productId, stockQuantity: { gte: purchase.quantity } }, data: { stockQuantity: { decrement: purchase.quantity } } });
+          if (!result.count) throw new BadRequestException('Estoque insuficiente para cancelar a compra. Devolva as peças utilizadas primeiro.');
+          const product = await tx.product.findUniqueOrThrow({ where: { id: purchase.productId } });
+          await tx.stockMovement.create({ data: {
+            tenantId, productId: purchase.productId, productName: purchase.productName, type: 'ADJUSTMENT',
+            quantity: -purchase.quantity, balanceAfter: product.stockQuantity, unitCost: purchase.unitCost,
+            notes: `Cancelamento da compra ${purchase.id}`,
+          } });
+          await tx.stockMovement.update({ where: { id: purchase.id }, data: { canceledAt: new Date() } });
+          const last = await tx.stockMovement.findFirst({ where: { tenantId, productId: purchase.productId, type: 'PURCHASE', canceledAt: null }, orderBy: [{ occurredAt: 'desc' }, { sequence: 'desc' }] });
+          await tx.product.update({ where: { id: product.id }, data: { purchaseDate: last?.occurredAt ?? null, ...(last ? { supplierId: last.supplierId, costPrice: last.unitCost } : {}) } });
+        }
+      }
+      if (entry.status === 'PAID') {
+        const reversal = await tx.financialEntry.create({ data: {
+          tenantId, serviceOrderId: entry.serviceOrderId, reversalOfId: entry.id, sourceKey: `reversal:${entry.id}`,
+          type: entry.type === 'INCOME' ? 'EXPENSE' : 'INCOME', status: 'PAID', category: 'Estorno',
+          description: `Estorno · ${entry.description}`, amount: entry.amount,
+          paymentMethod: paymentMethod ?? entry.paymentMethod, occurredAt: paidAt ? shopDate(paidAt) : new Date(),
+        } });
+        if (entry.serviceOrderId) await syncOrderBalance(tx, tenantId, entry.serviceOrderId);
+        return reversal;
+      }
+      return tx.financialEntry.update({ where: { id }, data: { status: 'CANCELED' } });
     });
   }
 }
